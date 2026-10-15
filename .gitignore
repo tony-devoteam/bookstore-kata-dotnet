@@ -2,6 +2,4 @@
 graphify-out/
 .rtk/
 .DS_Store
-AGENTS.md
-bookstore-kata-dotnet/
 opencode.jsonc

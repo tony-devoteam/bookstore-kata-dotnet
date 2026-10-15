@@ -13,6 +13,33 @@ List books, create new ones, update, and delete are some of the supported operat
 docker-compose up
 ``` 
 
+## API Documentation
+
+The static [OpenAPI 3.1 specification](docs/openapi/openapi.yaml) documents the **current
+behaviour** of every endpoint, including its known quirks. The running application does not expose
+an OpenAPI or Swagger UI endpoint.
+
+Validate the specification with `npx @redocly/cli lint`, or generate a standalone HTML page with:
+
+```bash
+npx @redocly/cli build-docs docs/openapi/openapi.yaml -o target/api-docs.html
+```
+
+| Document | Audience |
+|----------|----------|
+| [Functional documentation](docs/functional/functional-documentation.md) | Product Owner / business: business rules, use cases, limitations |
+| [Technical documentation](docs/technical/technical-documentation.md) | Developers / architects: high-level and low-level design, data model, integrations, build and run |
+| [Known issues](docs/technical/known-issues.md) | Backlog of defects and gaps against the company guidelines |
+| [Smoke tests](docs/technical/smoke-tests.http) | Executable HTTP requests covering every endpoint and error case |
+
+## Testing
+
+```bash
+mvn test
+# or, without a local JDK/Maven:
+docker run --rm -v "$PWD:/app" -v bookstore-m2:/root/.m2 -w /app maven:3.8.6-eclipse-temurin-11 mvn -B test
+```
+
 # Harness Architecture
 
 ## Tools

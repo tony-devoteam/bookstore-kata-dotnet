@@ -11,6 +11,11 @@
       "headers": {
         "X-MCP-Toolsets": "issues"
       }
-    }
+    },
+    "graphify": {
+  "type": "stdio",
+  "command": "graphify",
+  "args": [".", "--mcp"]
+}
   }
 }
