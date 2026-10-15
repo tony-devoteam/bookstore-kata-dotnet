@@ -3,7 +3,12 @@
     "codegraph": {
       "type": "stdio",
       "command": "codegraph",
-      "args": ["serve", "--mcp"]
+      "args": [
+        "serve",
+        "--mcp",
+        "--path",
+        "C:\\projects\\hackaton\\bookstore-kata-dotnet"
+      ]
     },
     "github": {
       "type": "http",
@@ -11,6 +16,11 @@
       "headers": {
         "X-MCP-Toolsets": "issues"
       }
-    }
+    },
+    "graphify": {
+  "type": "stdio",
+  "command": "graphify",
+  "args": [".", "--mcp"]
+}
   }
 }
