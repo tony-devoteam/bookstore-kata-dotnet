@@ -1,73 +1,46 @@
-# Known Issues and Guideline Gaps
+# Known Issues and Migration Resolutions
 
-This catalogue lists every defect, risky behaviour and deviation from
-[`COMPANY_GUIDELINES.md`](../../COMPANY_GUIDELINES.md) found while documenting the Bookstore API.
-All behaviours were reproduced against the running service (see [`smoke-tests.http`](smoke-tests.http)).
-**None of them has been fixed**; the OpenAPI document describes them as-is.
+This checklist records the Java implementation issues identified in the migration baseline and their status in the .NET 10 implementation.
 
-It is intended as the backlog for the .NET 10 re-implementation.
+| ID | Area | Migration result |
+|---|---|---|
+| KI-01 | Partial stock update | Fixed: omitted fields remain unchanged. |
+| KI-02 | Lookup by id | Fixed: `GET /api/v1/books/{id}` queries MongoDB by ObjectId. |
+| KI-03 | Update of unknown id | Fixed: returns `404`. |
+| KI-04 | Empty update id | Fixed: id is a required route segment and malformed ids return `400`. |
+| KI-05 | Update returns `201` | Fixed: PATCH returns `200`. |
+| KI-06 | Partial update response | Fixed: response contains the full updated book. |
+| KI-07 | Missing title status | Fixed: title validation returns `400` Problem Details. |
+| KI-08 | Missing update id status | Fixed by moving the identifier into the PATCH route; the route cannot silently create an id. |
+| KI-09 | Invalid category | Fixed: unknown category returns `400` with a validation detail. |
+| KI-10 | Request/response category naming | Fixed: request field is `category`; response field is numeric `categoryId`. |
+| KI-11 | Missing book result | Fixed: returns `404` Problem Details. |
+| KI-12 | Author search | Fixed: exact author filtering is available on the list endpoint. |
+| KI-13 | Unknown category filter | Fixed: returns `400`, not the unfiltered catalogue. |
+| KI-14 | Category case sensitivity | Fixed: category matching is case-insensitive. Title and author searches remain exact matches. |
+| KI-15 | Invalid title/negative stock/duplicates | Empty titles and negative quantities are rejected. Duplicate titles remain allowed, matching the functional business rule. |
+| KI-16 | Inactive registration date | Fixed: inactive books receive an automatic inactive date. |
+| KI-17 | Null title during search | Fixed: API-created books require a title; legacy null titles restore as empty and do not cause a null dereference. |
+| KI-18 | Duplicate category source | Fixed: categories are a single in-code reference list; the obsolete category seed script was removed. |
+| KI-19 | README claimed deletion | Fixed: documentation states that deletion is not supported. |
+| KI-20 | HTML/500 errors | Fixed: malformed JSON and request validation errors return appropriate client statuses and Problem Details. |
+| KI-21 | Empty error bodies | Fixed: errors include RFC 7807 type, title, status, detail, instance trace URN, and trace ID. |
+| KI-22 | Non-RFC date values | Fixed: date-time input requires an explicit offset and output uses ISO 8601 `DateTimeOffset`. |
+| KI-23 | Missing create Location | Fixed: POST returns a `Location` header. |
+| KI-24 | Verb-like lookup route | Fixed: id lookup uses `/api/v1/books/{id}`. |
+| KI-25 | Health nested under books | Fixed: readiness is `/health`. |
+| KI-26 | Missing API version | Fixed: book routes use `/api/v1`. |
+| KI-27 | Update id in body / partial PUT | Fixed: partial update uses PATCH and the id is in the path. |
+| KI-28 | Unbounded catalogue | Fixed: list results are paged with a maximum page size of 100. |
+| KI-29 | Hard-coded Mongo URI | Fixed: `MONGODB_URI` and related settings are configurable. |
+| KI-30 | MongoClient per operation | Fixed: one singleton MongoClient is shared by the application. |
+| KI-31 | Whole collection loaded for filters | Fixed: filters, sorting, and paging execute in MongoDB with supporting indexes. |
+| KI-32 | Health ignores MongoDB | Fixed: readiness pings MongoDB; server selection times out after three seconds. |
+| KI-33 | No authentication | **Open:** no authentication provider or authorization policy was specified. Anonymous access is preserved and documented; deploy only on a trusted network until an auth requirement is agreed. |
+| KI-34 | Unstructured logs / missing trace id | Fixed: JSON console logs and `X-Trace-Id` / Problem Details trace fields are enabled. |
+| KI-35 | Fixed port / no graceful shutdown | Fixed: host addresses use ASP.NET Core configuration; host lifecycle handles shutdown. |
+| KI-36 | No dependency injection | Fixed: services, repository, id generation, and Mongo client are registered through DI. |
+| KI-37 | Insufficient test coverage | Fixed: xUnit unit, WebApplicationFactory, and MongoDB Testcontainers tests; `dotnet test` enforces 70% line coverage. |
+| KI-38 | Java/Maven platform | Fixed: .NET 10, ASP.NET Core Minimal APIs, and the `dotnet` CLI replace Java/Jersey/Maven. |
 
-**Severity scale:** 🔴 High (data corruption or a broken feature), 🟠 Medium (wrong contract or a security/operational risk), 🟡 Low (a convention issue or cosmetic).
-
-## 1. Functional defects
-
-| ID | Severity | Area | Behaviour observed | Root cause | Expected |
-|----|----------|------|--------------------|------------|----------|
-| KI-01 | 🔴 | `PUT /books` | Omitting `active` **deactivates the book** and stamps `inactiveDate`. Sending `{"id": "…"}` alone deactivates it and sets `quantity` to 0. | `UpdateBookDTO.active` and `quantity` are primitives defaulting to `false` and `0`. The service always `$set`s both. | Partial update: only change the fields the client sent. |
-| KI-02 | 🔴 | `GET /books/single?id=` | Lookup by id never finds a book. | `BookService.getBook` compares strings with `==` (reference equality). | Use `equals`, ideally via a database query by `_id`. |
-| KI-03 | 🟠 | `PUT /books` | An unknown but well-formed `id` returns `201` and nothing changes. | `updateOne` result (`matchedCount`) is ignored. | `404 Not Found`. |
-| KI-04 | 🟠 | `PUT /books` | An empty-string `id` returns `201` with a newly generated id, and nothing is persisted. | `upsertBook` generates a new ObjectId for blank ids, but follows the update branch. | `400 Bad Request`. |
-| KI-05 | 🟠 | `PUT /books` | Returns `201 Created` for an update. | Hard-coded status. | `200 OK` (or `204`). |
-| KI-06 | 🟠 | `PUT /books` | The response is partial: title, author etc. are missing and `categoryId` is always `0`. | The response is built from the in-memory `Book` that was only partially filled. | Return the full updated book. |
-| KI-07 | 🟠 | `POST /books` | A missing `title` returns `404`. | Hard-coded status. | `400 Bad Request` with a validation message. |
-| KI-08 | 🟠 | `PUT /books` | A missing `id` returns `404`. | Hard-coded status. | `400 Bad Request`. |
-| KI-09 | 🟠 | `POST /books` | An unknown, empty or numeric category returns `500`. | `validateCategory` returns `null`, which is dereferenced (`NullPointerException`). | `400 Bad Request` listing the valid categories. |
-| KI-10 | 🟠 | `POST /books` | Request `categoryId` is a category **name** (string) while response `categoryId` is a number. | The DTO and the model use different types under the same name. | Consistent naming (`category` / `categoryId`). |
-| KI-11 | 🟠 | `GET /books/single` | No match (or no parameter) returns `200` with an empty body. | `Response.ok().entity(null)`. | `404 Not Found`. |
-| KI-12 | 🟠 | `GET /books/single?author=` | Always `500` ("not implemented"). | `RuntimeException` thrown in the controller. | Implement the filter, or return `501` / `400`. |
-| KI-13 | 🟠 | `GET /books?category=` | An unknown category returns **all** books. | The fallback branch in `getBookList`. | An empty list or `400`. |
-| KI-14 | 🟡 | `GET /books?category=`, `/single?name=` | Matching is exact and case-sensitive. | `String.equals`. | Case-insensitive matching on category; possibly partial matching on title. |
-| KI-15 | 🟡 | `POST /books` | Empty title, negative quantity and duplicate titles are accepted. | No validation. | FluentValidation rules. |
-| KI-16 | 🟡 | `POST /books` with `active: false` | `inactiveDate` is not set automatically (unlike `PUT`). | The create branch skips the deactivation rule. | Apply the same rule on create. |
-| KI-17 | 🟡 | `GET /books/single?name=` | A stored book with a `null` title would make every title search fail with `500`. | `b.getTitle().equals(name)`. | Null-safe comparison. |
-| KI-18 | 🟡 | Catalogue | The seed script creates a `categories` collection that the API never reads; categories are hard-coded in `Category.STATIC_CATEGORIES`. | Duplicate source of truth. | Pick one source. |
-| KI-19 | 🟡 | README | The README says the API supports deleting books; there is no `DELETE` operation (`405`). | Documentation drift. | Implement it or fix the README. |
-
-## 2. Error handling and contract
-
-| ID | Severity | Behaviour observed | Guideline |
-|----|----------|--------------------|-----------|
-| KI-20 | 🟠 | Every unhandled error returns a Grizzly **HTML** page with `500` and `Connection: close`. That includes client errors such as malformed JSON and wrong JSON types, which should be `400`. | §7: RFC 7807 Problem Details, standard status codes |
-| KI-21 | 🟠 | Other errors (`400`, `404`, `405`, `406`, `415`) have empty bodies, with no `type`, `title`, `detail` or `instance` (trace id). | §7 |
-| KI-22 | 🟡 | Dates are serialised as `2002-11-08T00:00:00Z[UTC]` (not RFC 3339). Date-only input fails with `500`. | General interoperability |
-| KI-23 | 🟡 | `POST` returns no `Location` header. | REST conventions |
-
-## 3. API design and naming
-
-| ID | Severity | Behaviour observed | Guideline |
-|----|----------|--------------------|-----------|
-| KI-24 | 🟡 | `/books/single?id=…` instead of `/books/{id}`. | §4: resource-oriented URIs |
-| KI-25 | 🟡 | The health probe lives under the resource path (`/books/health`). | §4 |
-| KI-26 | 🟡 | No versioning in the path (`/api/v1/...`). | §4 example `/api/v1/users` |
-| KI-27 | 🟡 | `PUT /books` takes the id in the body, not the path. `PUT` performs a partial update (semantically `PATCH`). | REST conventions |
-| KI-28 | 🟡 | No pagination on `GET /books`. | Scalability |
-
-## 4. Operational and security
-
-| ID | Severity | Behaviour observed | Guideline |
-|----|----------|--------------------|-----------|
-| KI-29 | 🟠 | The MongoDB URI is hard-coded (`mongodb://mongodb:27017`); the `MONGODB_URI` environment variable set by Docker Compose is ignored. | Configuration best practice |
-| KI-30 | 🟠 | A new `MongoClient` (connection pool) is created and closed on **every** call, and clients leak when an exception is thrown before `close()`. | Performance and resource safety |
-| KI-31 | 🟠 | Every lookup and filter reads the **whole collection** into memory, then filters in Java. | Database performance |
-| KI-32 | 🟠 | When MongoDB is down, requests hang about 30 s before the `500`, and `/books/health` still answers `200`. | Observability |
-| KI-33 | 🟠 | No authentication or authorisation; anyone can change stock. | §3: authentication requirements |
-| KI-34 | 🟡 | No structured (JSON) logging and no trace id; full stack traces are written to stdout. | §8 |
-| KI-35 | 🟡 | The port and base URI are hard-coded; there is no graceful shutdown. | Operations |
-| KI-36 | 🟡 | No dependency injection: `BookController()` creates `new BookService()`. | Testability |
-| KI-37 | 🟡 | Only one controller unit test; no service or integration tests. Coverage is far below the 70% target. | §9 |
-
-## 5. Platform
-
-| ID | Severity | Observation | Guideline |
-|----|----------|-------------|-----------|
-| KI-38 | 🟠 | Java 11 / Jersey / Maven instead of .NET 10 Minimal APIs with the `dotnet` CLI. | §1, §2 |
+No database schema conversion was needed: the MongoDB adapter preserves the existing ObjectId and field names. KI-33 is the sole unresolved guideline gap because choosing an authentication protocol would change access behavior without a supplied requirement.

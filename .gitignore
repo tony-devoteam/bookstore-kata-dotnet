@@ -3,3 +3,8 @@ graphify-out/
 .rtk/
 .DS_Store
 opencode.jsonc
+**/bin/
+**/obj/
+**/TestResults/
+Bookstore.Tests/coverage.*
+target/

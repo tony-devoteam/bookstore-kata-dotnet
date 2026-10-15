@@ -1,123 +1,113 @@
-### Bookstore API - smoke tests (VS Code REST Client / JetBrains HTTP Client)
-### Start the stack first: docker compose up -d --build
-### Each request is annotated with the response observed against the current implementation.
+### Bookstore Inventory API (.NET 10)
+### Start the stack: docker compose up --build
 
-@baseUrl = http://localhost:8080/api
+@baseUrl = http://localhost:8080
 
-### Health check -> 200, empty body
-GET {{baseUrl}}/books/health
+### Readiness (API and MongoDB) -> 200 healthy
+GET {{baseUrl}}/health
 
-### List all books -> 200, JSON array
-GET {{baseUrl}}/books
+### Generated OpenAPI document -> 200
+GET {{baseUrl}}/openapi/v1.json
 
-### List books of a category (exact, case-sensitive name) -> 200, filtered array
-GET {{baseUrl}}/books?category=Programming
+### Scalar UI -> 200 outside Production
+GET {{baseUrl}}/scalar/v1
 
-### Unknown category -> 200, ALL books (no filtering applied)
-GET {{baseUrl}}/books?category=programming
+### List all books (first page, 50 books maximum) -> 200 array
+GET {{baseUrl}}/api/v1/books
 
-### Create a book -> 201, Book with integer categoryId
+### List by category; category matching is case-insensitive -> 200 filtered array
+GET {{baseUrl}}/api/v1/books?category=programming&page=1&pageSize=25
+
+### Unknown category -> 400 Problem Details
+GET {{baseUrl}}/api/v1/books?category=Poetry
+
+### Search exact title or author
+GET {{baseUrl}}/api/v1/books?title=Test%20Driven%20Development
+
+### Search exact author
+GET {{baseUrl}}/api/v1/books?author=Kent%20Beck
+
+### Register a book -> 201 and Location header
 # @name createBook
-POST {{baseUrl}}/books
+POST {{baseUrl}}/api/v1/books
 Content-Type: application/json
 
 {
   "title": "Test Driven Development",
   "author": "Kent Beck",
-  "categoryId": "Programming",
+  "category": "Programming",
   "quantity": 3,
   "description": "A book about TDD",
   "language": "English",
-  "active": true,
   "publisher": "Addison-Wesley",
-  "publisherDate": "2002-11-08T00:00:00Z"
+  "publisherDate": "2002-11-08T10:00:00+02:00"
 }
 
-### Create without title -> 404, empty body
-POST {{baseUrl}}/books
+### Register with title only -> defaults to no category, zero stock, active
+POST {{baseUrl}}/api/v1/books
+Content-Type: application/json
+
+{ "title": "Minimal" }
+
+### Missing title -> 400 Problem Details
+POST {{baseUrl}}/api/v1/books
 Content-Type: application/json
 
 { "author": "Nobody" }
 
-### Create with unknown category name -> 500 (HTML error page)
-POST {{baseUrl}}/books
+### Negative quantity -> 400 Problem Details
+POST {{baseUrl}}/api/v1/books
 Content-Type: application/json
 
-{ "title": "Bad Category", "categoryId": "Poetry" }
+{ "title": "Invalid stock", "quantity": -1 }
 
-### Create with malformed JSON -> 500 (HTML error page, not 400)
-POST {{baseUrl}}/books
+### Malformed JSON -> 400 Problem Details
+POST {{baseUrl}}/api/v1/books
 Content-Type: application/json
 
-{ "title": 
+{ "title":
 
-### Create with an empty body -> 400, empty body
-POST {{baseUrl}}/books
+### Date without offset -> 400 Problem Details
+POST {{baseUrl}}/api/v1/books
 Content-Type: application/json
 
-### Create with a date without offset -> 500
-POST {{baseUrl}}/books
+{ "title": "Invalid date", "publisherDate": "2002-11-08T10:00:00" }
+
+### Retrieve created book by ObjectId -> 200
+GET {{baseUrl}}/api/v1/books/{{createBook.response.body.id}}
+
+### Malformed id -> 400 Problem Details
+GET {{baseUrl}}/api/v1/books/not-an-object-id
+
+### Unknown id -> 404 Problem Details
+GET {{baseUrl}}/api/v1/books/000000000000000000000001
+
+### Update only quantity; active state and other fields are preserved -> 200 full book
+PATCH {{baseUrl}}/api/v1/books/{{createBook.response.body.id}}
 Content-Type: application/json
 
-{ "title": "Date only", "publisherDate": "2002-11-08" }
+{ "quantity": 10 }
 
-### Create with wrong content type -> 415
-POST {{baseUrl}}/books
-Content-Type: text/plain
-
-hello
-
-### Get one book by exact title -> 200
-GET {{baseUrl}}/books/single?name=Test%20Driven%20Development
-
-### Get one book by id -> 200 with EMPTY body (id lookup never matches, see known issues)
-GET {{baseUrl}}/books/single?id={{createBook.response.body.id}}
-
-### Get one book with unknown title -> 200 with EMPTY body
-GET {{baseUrl}}/books/single?name=Unknown
-
-### Get one book by author -> 500 (not implemented)
-GET {{baseUrl}}/books/single?author=Kent%20Beck
-
-### Update stock and keep the book active -> 201, partial Book
-PUT {{baseUrl}}/books
+### Deactivate without changing quantity -> 200, inactiveDate is set
+PATCH {{baseUrl}}/api/v1/books/{{createBook.response.body.id}}
 Content-Type: application/json
 
-{ "id": "{{createBook.response.body.id}}", "quantity": 10, "active": true }
+{ "active": false }
 
-### Update stock WITHOUT "active" -> 201, book is DEACTIVATED and inactiveDate is set
-PUT {{baseUrl}}/books
+### Reactivate -> 200, inactiveDate is cleared
+PATCH {{baseUrl}}/api/v1/books/{{createBook.response.body.id}}
 Content-Type: application/json
 
-{ "id": "{{createBook.response.body.id}}", "quantity": 5 }
+{ "active": true }
 
-### Update without id -> 404
-PUT {{baseUrl}}/books
+### Empty update -> 400 Problem Details
+PATCH {{baseUrl}}/api/v1/books/{{createBook.response.body.id}}
 Content-Type: application/json
 
-{ "quantity": 5, "active": true }
+{}
 
-### Update with an unknown id -> 201, nothing changes
-PUT {{baseUrl}}/books
+### Update unknown id -> 404 Problem Details
+PATCH {{baseUrl}}/api/v1/books/000000000000000000000001
 Content-Type: application/json
 
-{ "id": "000000000000000000000000", "quantity": 5, "active": true }
-
-### Update with malformed id -> 500
-PUT {{baseUrl}}/books
-Content-Type: application/json
-
-{ "id": "not-an-object-id", "quantity": 5, "active": true }
-
-### Unsupported method -> 405
-DELETE {{baseUrl}}/books
-
-### Unacceptable Accept header -> 406
-GET {{baseUrl}}/books
-Accept: application/xml
-
-### OpenAPI document -> 200 application/yaml
-GET {{baseUrl}}/openapi.yaml
-
-### Swagger UI -> 200 text/html (open in a browser)
-GET {{baseUrl}}/docs
+{ "quantity": 4 }

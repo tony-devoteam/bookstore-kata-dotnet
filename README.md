@@ -1,80 +1,79 @@
-# Bookstore
+# Bookstore Inventory API
 
-Basic app using Java 11 and MongoDB.
+An ASP.NET Core Minimal API for browsing a bookstore catalogue, registering books, and managing stock and availability. MongoDB persists inventory records.
 
-It requires a bookstore database to be created in MongoDB.
+## Prerequisites
 
-This API manages book inventory in a bookstore. 
-List books, create new ones, update, and delete are some of the supported operations.
+- .NET 10 SDK
+- Docker Engine with Docker Compose v2
+- A MongoDB 7-compatible server when running the API outside Compose
 
-## Optional: Use docker compose to run the application
+## Getting started
 
-```bash
-docker-compose up
-``` 
-
-## API Documentation
-
-The static [OpenAPI 3.1 specification](docs/openapi/openapi.yaml) documents the **current
-behaviour** of every endpoint, including its known quirks. The running application does not expose
-an OpenAPI or Swagger UI endpoint.
-
-Validate the specification with `npx @redocly/cli lint`, or generate a standalone HTML page with:
+Start the API and MongoDB together:
 
 ```bash
-npx @redocly/cli build-docs docs/openapi/openapi.yaml -o target/api-docs.html
+docker compose up --build
 ```
 
-| Document | Audience |
-|----------|----------|
-| [Functional documentation](docs/functional/functional-documentation.md) | Product Owner / business: business rules, use cases, limitations |
-| [Technical documentation](docs/technical/technical-documentation.md) | Developers / architects: high-level and low-level design, data model, integrations, build and run |
-| [Known issues](docs/technical/known-issues.md) | Backlog of defects and gaps against the company guidelines |
-| [Smoke tests](docs/technical/smoke-tests.http) | Executable HTTP requests covering every endpoint and error case |
-
-## Testing
+The API listens on `http://localhost:8080`. To run the API from the .NET CLI instead, start MongoDB and run:
 
 ```bash
-mvn test
-# or, without a local JDK/Maven:
-docker run --rm -v "$PWD:/app" -v bookstore-m2:/root/.m2 -w /app maven:3.8.6-eclipse-temurin-11 mvn -B test
+docker compose up -d mongodb
+dotnet run --project Bookstore.Api --urls http://localhost:8080
 ```
 
-# Harness Architecture
+Configuration is supplied through environment variables:
 
-## Tools
+| Variable | Default | Purpose |
+|---|---|---|
+| `MONGODB_URI` | `mongodb://localhost:27017` | MongoDB connection string |
+| `MONGODB_DATABASE` | `bookstore` | Database name |
+| `MONGODB_COLLECTION` | `books` | Inventory collection |
+| `ASPNETCORE_URLS` | ASP.NET Core default | Listening addresses; Compose sets port `8080` |
 
-| Tool | Why | Install (reference) |
-|------|-----|---------------------|
-| **GitHub MCP** | Fetch issues (included in `.mcp.json`) | Uses Copilot GitHub auth — `https://api.githubcopilot.com/mcp/` with `X-MCP-Toolsets: issues` |
-| **CodeGraph** | Code navigation (base) | `npm i -g @colbymchenry/codegraph` → `codegraph install` → in repo `codegraph init` |
-| **RTK** | Compress shell/test noise | `brew install rtk-ai/tap/rtk` (or Cargo from `rtk-ai/rtk`) → `rtk gain` to verify → `rtk init -g --copilot` |
-| **Caveman** | Chat prose lite only | `npx skills add JuliusBrussee/caveman -g` → use `/caveman lite` in chat |
-| **Graphify** (optional) | Project/docs/schema map | Install per [Graphify](https://github.com/safishamsi/graphify), then add the MCP block below |
-| **Spec Kit** (optional) | Spec-driven delivery | [github/spec-kit](https://github.com/github/spec-kit) `specify init` for Copilot |
-| **grill-with-docs** (optional) | ADRs / CONTEXT alignment | From [mattpocock/skills](https://github.com/mattpocock/skills) |
+## API documentation
 
-### Optional Graphify MCP
+- OpenAPI 3.1 JSON: <http://localhost:8080/openapi/v1.json> (available in every environment)
+- Scalar interactive UI: <http://localhost:8080/scalar/v1> (non-production environments only)
+- Executable requests: [docs/technical/smoke-tests.http](docs/technical/smoke-tests.http)
+- [Functional documentation](docs/functional/functional-documentation.md)
+- [Technical documentation](docs/technical/technical-documentation.md)
+- [Known issues and resolutions](docs/technical/known-issues.md)
 
-Add only if Graphify is installed. Portable `.mcp.json`:
+The file [docs/openapi/openapi.yaml](docs/openapi/openapi.yaml) is retained as the Java 0.1 migration-baseline contract. This migration introduces the versioned `/api/v1` contract; clients must move from `/api/books`, use `category` instead of the legacy string-valued `categoryId`, and use `PATCH /api/v1/books/{id}` for partial stock updates. MongoDB book documents remain readable without a data conversion. The generated OpenAPI document is the contract for the current .NET service.
 
-```json
-"graphify": {
-  "type": "stdio",
-  "command": "graphify",
-  "args": [".", "--mcp"]
-}
+## Main routes
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Readiness check including MongoDB connectivity |
+| `GET` | `/api/v1/books` | List, filter, search, and page through books |
+| `GET` | `/api/v1/books/{id}` | Retrieve a book by ObjectId |
+| `POST` | `/api/v1/books` | Register a book |
+| `PATCH` | `/api/v1/books/{id}` | Partially update quantity and/or availability |
+
+All API errors use RFC 7807 Problem Details. The service currently has no authentication; see KI-33 in the known-issues document.
+
+## Testing and coverage
+
+Run unit, HTTP integration, and MongoDB Testcontainers integration tests:
+
+```bash
+dotnet test Bookstore.sln
 ```
 
-VS Code `.vscode/mcp.json` uses the same server entry under `"servers"`.
+The test project enforces **at least 70% line coverage** for the complete application assembly (generated OpenAPI support code is excluded). The most recent full run reported 96.39% line coverage. The report is written to `Bookstore.Tests/coverage.json`. MongoDB integration tests require Docker to be running.
 
-## How Harness is configured
+## Architecture and design notes
 
-- **GitHub MCP** to load an issue before work  
-- **CodeGraph** for code structure  
-- **Graphify** for project/docs (if present)  
-- **RTK** for noisy shell  
-- **Caveman lite** for chat only — never for SPEC/ADR/PR text  
-- **Spec Kit** alone as the delivery spine if you use one  
+- .NET 10, nullable reference types, Minimal APIs, FluentValidation, Serilog JSON logging, and central NuGet package management.
+- Book aggregate and business rules in `Bookstore.Api/Domain`; application coordination and repository contracts in `Bookstore.Api/Application`; MongoDB adapter and indexes in `Bookstore.Api/Infrastructure`.
+- One DI-managed `MongoClient` is shared for its lifetime. Database operations are asynchronous and cancellable.
+- Filtering, sorting, and bounded pagination run in MongoDB. Compound indexes support category/title/author filters and registration-order sorting.
+- No events, financial calculations, or authentication provider are present in the current domain and requirements.
+- MongoDB documents keep the legacy `_id` and lower-camel-case fields; the reimplementation does not require a data migration.
 
-No phase profiles. No parallel Superpowers + Spec Kit.
+## Maintainers
+
+No code owner or support channel has been designated in the repository yet.
